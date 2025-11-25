@@ -12,7 +12,7 @@
         :root {
             /* Personalize o nome do seu evento e a URL da imagem de fundo */
             --logo-text: "Noite de Estrelas";
-            --background-image: url('https://placehold.co/1920x1080/0d131f/b00e6c?text=Karaokê+Power'); 
+            --background-image: url('https://static.vecteezy.com/system/resources/previews/029/561/970/non_2x/music-karaoke-party-vivid-background-free-photo.jpg'); 
             --karaoke-pink: #ff1493; /* Deep Pink */
             --karaoke-blue: #00ffff; /* Aqua */
         }
@@ -58,19 +58,25 @@
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4">
 
-    <!-- BOTÕES DE NAVEGAÇÃO REMOVIDOS CONFORME SOLICITADO -->
-
     <div class="vote-card max-w-4xl w-full p-8 rounded-2xl">
         <h1 class="karaoke-title text-4xl sm:text-5xl text-center mb-8">Votação Karaokê <span class="block text-2xl" id="event-name"></span></h1>
         
         <!-- Área de Votação Principal -->
         <div id="voting-area" class="transition-opacity duration-500">
-            <p class="text-center mb-6 text-xl text-yellow-300">Selecione um cantor e dê sua nota de 1 a 10!</p>
             
-            <!-- Mensagens de Status (Movidas para fora de candidates-list para evitar o erro 'null') -->
+            <!-- NOVO CAMPO: Nickname -->
+            <div class="mb-6 bg-gray-700 p-4 rounded-lg">
+                <label for="voter-nickname" class="block text-xl font-bold mb-2 text-yellow-300">Seu Nome ou Apelido (Obrigatório):</label>
+                <input type="text" id="voter-nickname" placeholder="Digite seu nome/apelido" class="w-full p-3 rounded text-black bg-white border border-gray-400 focus:outline-none focus:border-karaoke-pink" maxlength="20">
+            </div>
+
+            <p class="text-center mb-6 text-xl text-yellow-300">Selecione um cantor e dê sua nota de 5 a 10!</p>
+            
+            <!-- Mensagens de Status -->
             <div class="text-center col-span-full mb-4">
                 <p id="loading-message" class="text-xl">Carregando candidatos...</p>
                 <p id="error-message" class="text-red-500 hidden">Não foi possível carregar os candidatos. Tente novamente mais tarde.</p>
+                <p id="status-message" class="text-red-400 hidden mt-2"></p>
             </div>
             
             <div id="candidates-list" class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -85,21 +91,20 @@
             </div>
         </div>
 
-        <!-- Área de Agradecimento e Resumo (Mantida, mas não utilizada após o redirecionamento automático) -->
+        <!-- Área de Agradecimento (apenas fallback) -->
         <div id="thank-you-area" class="text-center hidden transition-opacity duration-500">
             <h2 class="text-3xl sm:text-4xl text-karaoke-blue mb-4">Obrigado pelo seu Voto! 🎉</h2>
             <p class="text-xl mb-6">Você será redirecionado automaticamente para o ranking...</p>
             
-            <!-- Apenas um botão de fallback, caso o redirecionamento falhe -->
              <button onclick="window.location.href = 'resultados.html';" class="mt-6 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-lg transition duration-300">Ir para Resultados</button>
         </div>
     </div>
 
-    <!-- Script do Firebase (Importante: usar as variáveis globais do ambiente) -->
+    <!-- Script do Firebase -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, doc, addDoc, query, updateDoc, increment, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, doc, addDoc, query, updateDoc, increment, runTransaction, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Variáveis globais MANDATÓRIAS do Canvas
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -108,7 +113,7 @@
         const FALLBACK_CONFIG = {
             apiKey: "AIzaSyAuQ9XNsGVIp7Y0FRftnbNhDL9lGl8hNTI",
             authDomain: "karaoke-38a94.firebaseapp.com",
-            projectId: "karaoke-38a94", // ESTE CAMPO ESTAVA FALTANDO OU ERA NULO!
+            projectId: "karaoke-38a94", 
             storageBucket: "karaoke-38a94.firebasestorage.app",
             messagingSenderId: "17039001114",
             appId: "1:17039001114:web:5a382081f045d4f84273a3"
@@ -129,6 +134,10 @@
         let selectedCandidateId = null;
         let selectedScore = 0;
         let candidatesMap = {}; // Para armazenar candidatos por ID
+        
+        const nicknameInput = document.getElementById('voter-nickname');
+        const statusMessage = document.getElementById('status-message');
+
 
         document.getElementById('event-name').textContent = document.documentElement.style.getPropertyValue('--logo-text');
 
@@ -144,7 +153,6 @@
                     if (user) {
                         userId = user.uid;
                         console.log("Autenticado com sucesso. User ID:", userId);
-                        // Inicia o carregamento de dados após a autenticação
                         loadCandidates();
                     } else {
                         console.error("Falha na autenticação. Tentando novamente...");
@@ -157,53 +165,54 @@
             }
         }
 
+        // Exibe mensagens de status na UI
+        function showStatus(message, isError = false) {
+            statusMessage.textContent = message;
+            statusMessage.classList.remove('hidden', 'text-green-500', 'text-red-400');
+            statusMessage.classList.add(isError ? 'text-red-400' : 'text-green-500');
+            // Oculta a mensagem após 5 segundos
+            setTimeout(() => { statusMessage.classList.add('hidden'); }, 5000);
+        }
+
         // --- Funções de Votação e UI ---
 
         // Carrega a lista de candidatos
         function loadCandidates() {
             const listContainer = document.getElementById('candidates-list');
-            listContainer.innerHTML = ''; // Limpa apenas a lista de cards
+            listContainer.innerHTML = '';
             
-            // Garantir que as mensagens de status não sejam nulas antes de usar classList
             const loadingMessage = document.getElementById('loading-message');
             const errorMessage = document.getElementById('error-message');
             
-            if (loadingMessage) {
-                loadingMessage.classList.remove('hidden');
-            }
-            if (errorMessage) {
-                errorMessage.classList.add('hidden'); // Esconde o erro no início do carregamento
-            }
-
+            if (loadingMessage) loadingMessage.classList.remove('hidden');
+            if (errorMessage) errorMessage.classList.add('hidden');
 
             const candidatesQuery = query(collection(db, CANDIDATES_PATH));
             
-            // onSnapshot para atualizar candidatos em tempo real se o admin adicionar novos
+            // onSnapshot para atualizar candidatos em tempo real e filtrar por isVotingEnabled
             onSnapshot(candidatesQuery, (snapshot) => {
                 listContainer.innerHTML = '';
-                candidatesMap = {}; // Limpa o mapa
+                candidatesMap = {}; 
                 
-                if (snapshot.empty) {
-                    listContainer.innerHTML = `<p class="col-span-full text-xl text-yellow-500">Nenhum candidato cadastrado. Use a página <a href="admin.html" class="text-karaoke-pink underline">Admin</a> para cadastrar.</p>`;
+                const enabledCandidates = snapshot.docs.filter(doc => doc.data().isVotingEnabled !== false); // Filtra por 'isVotingEnabled: true' ou não definido
+                
+                if (enabledCandidates.length === 0) {
+                    listContainer.innerHTML = `<p class="col-span-full text-xl text-yellow-500">Nenhum candidato com votação ativa. Verifique a página <a href="admin.html" class="text-karaoke-pink underline">Admin</a>.</p>`;
                 } else {
-                    snapshot.forEach(doc => {
+                    enabledCandidates.forEach(doc => {
                         const candidate = doc.data();
                         candidatesMap[doc.id] = candidate;
                         listContainer.appendChild(createCandidateCard(doc.id, candidate.name));
                     });
                 }
-                if (loadingMessage) {
-                    loadingMessage.classList.add('hidden');
-                }
+                if (loadingMessage) loadingMessage.classList.add('hidden');
             }, (error) => {
                 console.error("Erro ao carregar candidatos:", error);
                 if (errorMessage) {
                     errorMessage.classList.remove('hidden');
                     errorMessage.textContent = "Erro ao carregar candidatos: " + error.message;
                 }
-                if (loadingMessage) {
-                    loadingMessage.classList.add('hidden');
-                }
+                if (loadingMessage) loadingMessage.classList.add('hidden');
             });
         }
 
@@ -211,15 +220,19 @@
         function createCandidateCard(id, name) {
             const card = document.createElement('div');
             card.className = 'bg-gray-700 p-4 rounded-xl shadow-xl transition duration-300 hover:scale-[1.02]';
+            
+            // Notas de 5 a 10
+            const scores = [5, 6, 7, 8, 9, 10]; 
+
             card.innerHTML = `
                 <h3 class="text-2xl font-bold text-center mb-4 text-karaoke-blue">${name}</h3>
                 <div class="score-selector flex justify-center flex-wrap gap-2" data-candidate-id="${id}">
-                    ${Array.from({ length: 10 }, (_, i) => i + 1).map(score => `
+                    ${scores.map(score => `
                         <button class="score-button w-10 h-10 rounded-full font-bold text-sm" data-score="${score}">${score}</button>
                     `).join('')}
                 </div>
             `;
-            // Adiciona o listener de clique para a seleção de nota
+            
             card.querySelectorAll('.score-button').forEach(button => {
                 button.addEventListener('click', (e) => handleScoreSelection(e, id));
             });
@@ -231,7 +244,7 @@
             const clickedButton = event.currentTarget;
             const score = parseInt(clickedButton.getAttribute('data-score'));
             
-            // Limpa seleções anteriores (apenas um voto por sessão)
+            // Limpa seleções de score para todos os cards
             document.querySelectorAll('.score-button').forEach(btn => btn.classList.remove('selected'));
 
             // Seleciona o novo botão
@@ -244,33 +257,61 @@
 
         // Envia o voto para o Firestore
         document.getElementById('submit-vote-btn').addEventListener('click', async () => {
-            if (!selectedCandidateId || selectedScore === 0) {
-                console.error("Selecione um candidato e uma nota.");
+            const nickname = nicknameInput.value.trim();
+            
+            if (!nickname) {
+                showStatus("Por favor, insira seu nome ou apelido para votar.", true);
+                return;
+            }
+            if (!selectedCandidateId || selectedScore < 5) {
+                showStatus("Selecione um candidato e uma nota (5-10).", true);
                 return;
             }
 
             const button = document.getElementById('submit-vote-btn');
-            button.textContent = "Enviando...";
+            button.textContent = "Verificando...";
             button.disabled = true;
 
             try {
-                // 1. Salva o voto individual
+                // 1. VERIFICAÇÃO DE VOTO ÚNICO POR CANDIDATO/NICKNAME
+                const existingVoteQuery = query(
+                    collection(db, VOTES_PATH),
+                    where("candidateId", "==", selectedCandidateId),
+                    where("voterNickname", "==", nickname)
+                );
+                
+                const existingVotesSnapshot = await getDocs(existingVoteQuery);
+
+                if (!existingVotesSnapshot.empty) {
+                    showStatus("Você já votou neste candidato com este apelido.", true);
+                    button.textContent = "Votar";
+                    button.disabled = false;
+                    return;
+                }
+
+                // 2. Salva o voto individual
+                button.textContent = "Enviando...";
                 await addDoc(collection(db, VOTES_PATH), {
                     candidateId: selectedCandidateId,
                     score: selectedScore,
+                    voterNickname: nickname, // NOVO CAMPO
                     timestamp: new Date().toISOString(),
                     voterId: userId
                 });
                 
-                // 2. Atualiza o resumo de pontos 
+                // 3. Atualiza o resumo de pontos 
                 await updateCandidateSummary(selectedCandidateId, selectedScore);
 
-                // 3. REDIRECIONAMENTO AUTOMÁTICO PARA A PÁGINA DE RESULTADOS
-                window.location.href = 'resultados.html';
+                // 4. REDIRECIONAMENTO AUTOMÁTICO
+                showStatus("Voto enviado com sucesso! Redirecionando...", false);
+                setTimeout(() => {
+                    window.location.href = 'resultados.html';
+                }, 1000);
+
 
             } catch (e) {
-                console.error("Erro ao adicionar documento: ", e);
-                console.error("Erro ao enviar o voto. Verifique a conexão ou as regras do Firebase.");
+                console.error("Erro ao enviar voto: ", e);
+                showStatus(`Erro ao votar. Verifique a conexão ou as regras do Firebase. Detalhe: ${e.message}`, true);
                 button.textContent = "Votar";
                 button.disabled = false;
             }
@@ -299,7 +340,6 @@
                 console.log("Resumo do candidato atualizado com sucesso.");
             } catch (e) {
                 console.error("Erro na transação de atualização do resumo:", e);
-                // Se a transação falhar, tentamos uma atualização simples como fallback
                 await updateDoc(candidateRef, {
                     totalScore: increment(score),
                     voteCount: increment(1)
@@ -307,9 +347,6 @@
             }
         }
         
-        // A FUNÇÃO listenForResultsSummary FOI REMOVIDA POIS O REDIRECIONAMENTO É IMEDIATO
-        
-        // Inicia o processo
         window.onload = initializeAuth;
 
     </script>
