@@ -12,7 +12,7 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Bungee+Outline&family=Changa+One:ital@0;1&display=swap');
         :root {
-            --background-image: url('https://placehold.co/1920x1080/1f0d1f/00ffff?text=Painel+Admin'); 
+            --background-image: url('https://static.vecteezy.com/system/resources/previews/029/561/970/non_2x/music-karaoke-party-vivid-background-free-photo.jpg'); 
             --karaoke-pink: #ff1493; /* Deep Pink */
             --karaoke-blue: #00ffff; /* Aqua */
         }
@@ -37,6 +37,22 @@
         .admin-title {
             font-family: 'Bungee Outline', cursive;
             text-shadow: 0 0 10px var(--karaoke-pink), 0 0 20px var(--karaoke-blue);
+        }
+        /* Estilo para o toggle de votação */
+        .toggle-btn {
+            transition: background-color 0.3s, transform 0.2s;
+            padding: 0.5rem 1rem;
+            font-weight: bold;
+            border-radius: 9999px;
+            cursor: pointer;
+        }
+        .toggle-on {
+            background-color: #10b981; /* green-500 */
+            color: white;
+        }
+        .toggle-off {
+            background-color: #f87171; /* red-400 */
+            color: white;
         }
     </style>
 </head>
@@ -65,7 +81,7 @@
             </button>
         </div>
 
-        <!-- Lista de Candidatos Atuais (com opção de exclusão) -->
+        <!-- Lista de Candidatos Atuais (com opção de exclusão e toggle) -->
         <div class="mb-8">
             <h3 class="text-2xl font-semibold mb-3 text-yellow-400 border-b pb-2 border-gray-600">Candidatos Atuais</h3>
             <ul id="admin-candidates-list" class="space-y-3 p-2 bg-gray-800 rounded-lg max-h-60 overflow-y-auto">
@@ -98,7 +114,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, doc, addDoc, deleteDoc, query, getDocs, writeBatch, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, query, getDocs, writeBatch, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Variáveis globais MANDATÓRIAS do Canvas
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -107,7 +123,7 @@
         const FALLBACK_CONFIG = {
             apiKey: "AIzaSyAuQ9XNsGVIp7Y0FRftnbNhDL9lGl8hNTI",
             authDomain: "karaoke-38a94.firebaseapp.com",
-            projectId: "karaoke-38a94", // ESTE CAMPO ESTAVA FALTANDO OU ERA NULO!
+            projectId: "karaoke-38a94", 
             storageBucket: "karaoke-38a94.firebasestorage.app",
             messagingSenderId: "17039001114",
             appId: "1:17039001114:web:5a382081f045d4f84273a3"
@@ -153,11 +169,8 @@
 
         // Adiciona um novo candidato
         document.getElementById('add-candidate-btn').addEventListener('click', async () => {
-            console.log("Botão 'Adicionar Candidato' clicado."); // LOG: Confirma clique
             const input = document.getElementById('new-candidate-name');
             const name = input.value.trim();
-
-            console.log("Nome do candidato a ser adicionado:", name); // LOG: Exibe o valor do campo
 
             if (name) {
                 try {
@@ -165,23 +178,16 @@
                         name: name,
                         totalScore: 0,
                         voteCount: 0,
+                        isVotingEnabled: true, // NOVO CAMPO: Votação ativada por padrão
                         createdAt: new Date().toISOString()
                     });
                     input.value = ''; // Limpa o campo
-                    console.log(`Candidato "${name}" adicionado com sucesso.`);
                 } catch (e) {
                     console.error("Erro ao adicionar candidato: ", e);
-                    
-                    // VERIFICAÇÃO DE PERMISSÃO MAIS DETALHADA
-                    if (e.code && e.code === 'permission-denied') {
-                        console.error("ERRO DE PERMISSÃO (403): Verifique as Regras de Segurança do Firestore. O usuário autenticado não tem permissão de 'write' na coleção 'candidates'.");
-                        showConfirmationModal(`ERRO DE PERMISSÃO: Não foi possível adicionar o candidato. Por favor, verifique as Regras de Segurança do Firebase.`, () => {}, 'Erro');
-                    } else {
-                        showConfirmationModal(`Erro ao adicionar candidato. Detalhe: ${e.message}`, () => {}, 'Erro');
-                    }
+                    showConfirmationModal(`ERRO AO ADICIONAR: Verifique as Regras de Segurança do Firebase. Detalhe: ${e.message}`, () => {}, 'Erro');
                 }
             } else {
-                console.error("Por favor, insira o nome do cantor. O campo está vazio.");
+                console.error("Por favor, insira o nome do cantor.");
             }
         });
 
@@ -200,34 +206,61 @@
                 } else {
                     snapshot.forEach(doc => {
                         const candidate = doc.data();
-                        listContainer.appendChild(createAdminCandidateItem(doc.id, candidate.name));
+                        listContainer.appendChild(createAdminCandidateItem(doc.id, candidate.name, candidate.isVotingEnabled));
                     });
                 }
             }, (error) => {
                 console.error("Erro ao carregar lista admin:", error);
-                
                 let displayMessage = `Erro ao carregar lista: ${error.message}`;
                 if (error.code && error.code === 'permission-denied') {
                     displayMessage = "ERRO: Permissão negada. Verifique suas Regras de Segurança do Firebase!";
-                    console.error("ERRO DE PERMISSÃO (403): O usuário não tem permissão de 'read' na coleção 'candidates'.");
                 }
-                
                 listContainer.innerHTML = `<p class="text-center text-red-400">${displayMessage}</p>`;
             });
         }
 
         // Cria o item da lista de administração
-        function createAdminCandidateItem(id, name) {
+        function createAdminCandidateItem(id, name, isVotingEnabled) {
             const item = document.createElement('li');
             item.className = 'flex justify-between items-center bg-gray-700 p-2 rounded';
             item.innerHTML = `
-                <span>${name}</span>
-                <button data-id="${id}" class="delete-candidate-btn text-red-400 hover:text-red-600 transition duration-150 p-1">
-                    <i class="fas fa-times-circle"></i>
-                </button>
+                <span class="truncate pr-2">${name}</span>
+                <div class="flex items-center space-x-2">
+                    <!-- Botão de Toggle -->
+                    <button data-id="${id}" data-enabled="${isVotingEnabled}" class="toggle-btn ${isVotingEnabled ? 'toggle-on' : 'toggle-off'} text-sm">
+                        ${isVotingEnabled ? 'ATIVO' : 'PAUSADO'}
+                    </button>
+                    <!-- Botão de Excluir -->
+                    <button data-id="${id}" class="delete-candidate-btn text-red-400 hover:text-red-600 transition duration-150 p-1">
+                        <i class="fas fa-times-circle"></i>
+                    </button>
+                </div>
             `;
             item.querySelector('.delete-candidate-btn').addEventListener('click', handleDeleteCandidate);
+            item.querySelector('.toggle-btn').addEventListener('click', handleToggleVotingStatus);
             return item;
+        }
+
+        // NOVO: Lida com a ativação/pausa da votação
+        async function handleToggleVotingStatus(event) {
+            const button = event.currentTarget;
+            const candidateId = button.getAttribute('data-id');
+            const isEnabled = button.getAttribute('data-enabled') === 'true';
+            const newStatus = !isEnabled;
+
+            button.disabled = true;
+
+            try {
+                const candidateRef = doc(db, CANDIDATES_PATH, candidateId);
+                await updateDoc(candidateRef, {
+                    isVotingEnabled: newStatus
+                });
+            } catch (e) {
+                console.error("Erro ao alternar status de votação:", e);
+                showConfirmationModal(`Erro ao alternar status. Detalhe: ${e.message}`, () => {}, 'Erro');
+            } finally {
+                button.disabled = false;
+            }
         }
 
         // Lida com a exclusão de um candidato
@@ -235,20 +268,14 @@
             const candidateId = event.currentTarget.getAttribute('data-id');
             showConfirmationModal("Tem certeza que deseja DELETAR este candidato e todos os seus votos associados?", async () => {
                  try {
-                    // 1. Deleta o documento do candidato (que contém o resumo)
                     await deleteDoc(doc(db, CANDIDATES_PATH, candidateId));
-                    
-                    // 2. Tenta deletar todos os votos individuais (opcional, mas bom para limpeza)
                     const votesQuery = query(collection(db, VOTES_PATH), where("candidateId", "==", candidateId));
                     const votesSnapshot = await getDocs(votesQuery);
                     
                     const batch = writeBatch(db);
-                    votesSnapshot.forEach(voteDoc => {
-                        batch.delete(voteDoc.ref);
-                    });
+                    votesSnapshot.forEach(voteDoc => { batch.delete(voteDoc.ref); });
                     await batch.commit();
 
-                    console.log(`Candidato ${candidateId} e seus votos deletados.`);
                     showConfirmationModal(`Candidato e votos deletados com sucesso.`, () => {}, 'Sucesso');
                 } catch (e) {
                     console.error("Erro ao deletar candidato/votos:", e);
@@ -262,7 +289,6 @@
         document.getElementById('reset-votes-btn').addEventListener('click', () => {
             showConfirmationModal("ATENÇÃO: Isso limpará TODOS os votos e resetará a contagem de todos os candidatos. Você confirma?", async () => {
                 try {
-                    // 1. Resetar os resumos dos candidatos (totalScore e voteCount)
                     const candidatesSnapshot = await getDocs(collection(db, CANDIDATES_PATH));
                     const candidateBatch = writeBatch(db);
                     candidatesSnapshot.forEach(candidateDoc => {
@@ -270,23 +296,20 @@
                     });
                     await candidateBatch.commit();
                     
-                    // 2. Deletar todos os votos individuais
                     const votesSnapshot = await getDocs(collection(db, VOTES_PATH));
                     const votesBatch = writeBatch(db);
-                    votesSnapshot.forEach(voteDoc => {
-                        votesBatch.delete(voteDoc.ref);
-                    });
+                    votesSnapshot.forEach(voteDoc => { votesBatch.delete(voteDoc.ref); });
                     await votesBatch.commit();
 
                     showConfirmationModal(`Todos os votos e contagens foram zerados com sucesso!`, () => {}, 'Sucesso');
                 } catch (e) {
                     console.error("Erro ao resetar votos:", e);
-                    showConfirmationModal(`Erro ao resetar. Verifique as regras do Firebase. Detalhe: ${e.message}`, () => {}, 'Erro');
+                    showConfirmationModal(`Erro ao resetar. Detalhe: ${e.message}`, () => {}, 'Erro');
                 }
             });
         });
 
-        // --- Modal de Confirmação Customizado (Duplicado para este arquivo) ---
+        // --- Modal de Confirmação Customizado ---
         let actionToConfirm = null;
         let confirmMode = 'Confirm';
         const modal = document.getElementById('confirmation-modal');
@@ -335,7 +358,6 @@
             actionToConfirm = null;
         };
         
-        // Inicia o processo
         window.onload = initializeAuth;
 
     </script>
