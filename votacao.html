@@ -24,6 +24,10 @@
             color: white;
             font-family: 'Changa One', sans-serif;
             transition: all 0.3s ease;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
         /* Estilo para a caixa principal de votação */
         .vote-card {
@@ -56,9 +60,9 @@
         }
     </style>
 </head>
-<body class="min-h-screen flex flex-col items-center justify-center p-4">
+<body class="p-4">
 
-    <div class="vote-card max-w-4xl w-full p-8 rounded-2xl">
+    <div class="vote-card max-w-4xl w-full p-8 rounded-2xl mt-8 mb-8">
         <h1 class="karaoke-title text-4xl sm:text-5xl text-center mb-8">Votação Karaokê <span class="block text-2xl" id="event-name"></span></h1>
         
         <!-- Área de Votação Principal -->
@@ -99,6 +103,11 @@
              <button onclick="window.location.href = 'resultados.html';" class="mt-6 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-lg transition duration-300">Ir para Resultados</button>
         </div>
     </div>
+
+    <!-- Rodapé -->
+    <footer class="mt-auto w-full p-4 text-center text-sm text-gray-400 bg-gray-900 bg-opacity-70 backdrop-filter backdrop-blur-sm">
+        2025 By: An.Yoshi - Todos os direitos reservados.
+    </footer>
 
     <!-- Script do Firebase -->
     <script type="module">
